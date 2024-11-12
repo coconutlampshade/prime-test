@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prime Number Tester</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        .description {
+            color: #666;
+            line-height: 1.5;
+            margin: 15px 0;
+        }
+        .attribution {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+            padding: 10px;
+            border-top: 1px solid #eee;
+        }
+        .attribution a {
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        .attribution a:hover {
+            text-decoration: underline;
+        }
+        .input-area {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+        input {
+            width: 300px;
+            padding: 8px;
+            font-size: 16px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .prime {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .not-prime {
+            background-color: #f44336;
+            color: white;
+        }
+        .warning {
+            background-color: #ff9800;
+            color: white;
+        }
+        .factors {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .computation-log {
+            height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            background: #2b2b2b;
+            color: #a9b7c6;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 4px;
+        }
+        .computation-log .entry {
+            margin: 2px 0;
+        }
+        .computation-log .success {
+            color: #6A8759;
+        }
+        .computation-log .fail {
+            color: #CC7832;
+        }
+    </style>
+</head>
+<body>
+    <h1>Prime Number Tester</h1>
+    
+    <p class="description">
+        This tool tests whether a number is prime using the Miller-Rabin primality test algorithm. For small numbers it uses trial division, and for larger numbers it employs probabilistic testing with multiple bases for extremely high accuracy. The computation log shows the detailed steps of the testing process.
+    </p>
+
+    <div class="input-area">
+        <label for="number">Enter a number:</label>
+        <input type="text" id="number" placeholder="Enter a positive integer">
+        <button onclick="testPrime()" id="test-button">Test</button>
+    </div>
+    <div id="computation-log" class="computation-log" style="display: none;"></div>
+    <div id="result" class="result"></div>
+    <div id="factors" class="factors"></div>
+
+    <div class="attribution">
+        Brought to you by <a href="https://premium.boingboing.net">Boing Boing</a>
+    </div>
+
+    <script>
+        let isRunning = false;
+        let shouldStop = false;
+
+        function appendToLog(message, className = '') {
+            const log = document.getElementById('computation-log');
+            const entry = document.createElement('div');
+            entry.className = 'entry ' + className;
+            entry.textContent = message;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function modPow(a, d, n) {
+            let result = 1n;
+            a = a % n;
+            while (d > 0n) {
+                if (d & 1n) {
+                    result = (result * a) % n;
+                }
+                a = (a * a) % n;
+                d >>= 1n;
+            }
+            return result;
+        }
+
+        async function millerRabinTest(n, a) {
+            if (shouldStop) throw new Error('Calculation stopped');
+            
+            appendToLog(`Testing base ${a}...`);
+            
+            if (n === 2n) return true;
+            if (n <= 1n || n % 2n === 0n) return false;
+
+            let d = n - 1n;
+            let r = 0n;
+            while (d % 2n === 0n) {
+                d /= 2n;
+                r += 1n;
+            }
+
+            let x = await modPow(a, d, n);
+            appendToLog(`ModPow(${a}, ${d}, ${n}) = ${x}`);
+            
+            if (x === 1n || x === n - 1n) {
+                appendToLog(`Base ${a} passed initial test`, 'success');
+                return true;
+            }
+
+            for (let i = 0n; i < r - 1n; i++) {
+                x = (x * x) % n;
+                appendToLog(`Round ${Number(i) + 1}: ${x}`);
+                if (x === n - 1n) {
+                    appendToLog(`Base ${a} passed after ${Number(i) + 1} rounds`, 'success');
+                    return true;
+                }
+                if (x === 1n) {
+                    appendToLog(`Base ${a} failed - found 1`, 'fail');
+                    return false;
+                }
+            }
+
+            appendToLog(`Base ${a} failed final test`, 'fail');
+            return false;
+        }
+
+        async function findFactors(n) {
+            n = BigInt(n);
+            if (n % 2n === 0n) return [2n, n / 2n];
+            if (n % 3n === 0n) return [3n, n / 3n];
+            
+            let i = 5n;
+            let step = 0;
+            while (i * i <= n) {
+                if (shouldStop) throw new Error('Calculation stopped');
+                
+                if (step % 1000 === 0) {
+                    appendToLog(`Testing divisor ${i}...`);
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+                
+                if (n % i === 0n) {
+                    appendToLog(`Found factor: ${i}`, 'success');
+                    return [i, n / i];
+                }
+                if (n % (i + 2n) === 0n) {
+                    appendToLog(`Found factor: ${i + 2n}`, 'success');
+                    return [i + 2n, n / (i + 2n)];
+                }
+                i += 6n;
+                step++;
+            }
+            return null;
+        }
+
+        async function isPrime(num) {
+            try {
+                const n = BigInt(num);
+                
+                appendToLog(`Testing ${n} for primality...`);
+                
+                // Quick checks
+                if (n <= 1n) return { isPrime: false, factors: n === 0n ? [0n, 0n] : [1n, n] };
+                if (n === 2n || n === 3n) return { isPrime: true };
+                if (n % 2n === 0n) return { isPrime: false, factors: [2n, n / 2n] };
+                if (n % 3n === 0n) return { isPrime: false, factors: [3n, n / 3n] };
+
+                // For small numbers, use trial division
+                if (n < 1000000n) {
+                    appendToLog('Using trial division method for small number');
+                    const factors = await findFactors(n);
+                    if (factors) return { isPrime: false, factors };
+                    return { isPrime: true };
+                }
+
+                // For large numbers, use Miller-Rabin test
+                appendToLog('Using Miller-Rabin test for large number');
+                const bases = [2n, 3n, 5n, 7n, 11n, 13n, 17n, 19n, 23n, 29n, 31n, 37n];
+                
+                for (const a of bases) {
+                    if (shouldStop) throw new Error('Calculation stopped');
+                    if (a >= n) break;
+                    
+                    const result = await millerRabinTest(n, a);
+                    if (!result) {
+                        appendToLog('Number is composite, searching for factors...');
+                        const factors = await findFactors(n);
+                        return { isPrime: false, factors };
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                appendToLog('All tests passed!', 'success');
+                return { isPrime: true };
+            } catch (e) {
+                if (e.message === 'Calculation stopped') throw e;
+                throw new Error('Please enter a valid positive integer');
+            }
+        }
+
+        function formatNumber(n) {
+            return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        async function testPrime() {
+            if (isRunning) {
+                shouldStop = true;
+                return;
+            }
+            
+            const input = document.getElementById('number').value.trim();
+            if (!input) {
+                showError('Please enter a number');
+                return;
+            }
+
+            isRunning = true;
+            shouldStop = false;
+            const result = document.getElementById('result');
+            const factors = document.getElementById('factors');
+            const compLog = document.getElementById('computation-log');
+            const testButton = document.getElementById('test-button');
+            
+            result.textContent = "Testing...";
+            result.className = "result";
+            factors.textContent = "";
+            compLog.style.display = 'block';
+            compLog.textContent = '';
+            testButton.textContent = "Stop";
+
+            try {
+                const { isPrime: isPrimeResult, factors: factorPair } = await isPrime(input);
+                if (!shouldStop) {
+                    result.textContent = `${formatNumber(input)} is ${isPrimeResult ? '' : 'not '}prime`;
+                    result.className = `result ${isPrimeResult ? 'prime' : 'not-prime'}`;
+                    
+                    if (!isPrimeResult && factorPair) {
+                        factors.textContent = `Factors: ${formatNumber(factorPair[0])} × ${formatNumber(factorPair[1])}`;
+                    }
+                }
+            } catch (e) {
+                if (e.message === 'Calculation stopped') {
+                    result.textContent = "Calculation stopped by user";
+                    result.className = "result warning";
+                } else {
+                    showError(e.message);
+                }
+            }
+
+            isRunning = false;
+            shouldStop = false;
+            testButton.textContent = "Test";
+        }
+
+        function showError(message) {
+            const result = document.getElementById('result');
+            const factors = document.getElementById('factors');
+            const compLog = document.getElementById('computation-log');
+            result.textContent = message;
+            result.className = "result error";
+            factors.textContent = "";
+            compLog.style.display = 'none';
+        }
+
+        // Add enter key support
+        document.getElementById('number').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testPrime();
+            }
+        });
+    </script>
+</body>
+</html>
